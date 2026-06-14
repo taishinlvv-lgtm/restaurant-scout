@@ -1,15 +1,78 @@
-{
-  "name": "restaurant-scout",
-  "version": "1.0.0",
-  "main": "src/index.js",
-  "scripts": {
-    "start": "node src/index.js"
-  },
-  "dependencies": {
-    "axios": "^1.6.0",
-    "cheerio": "^1.0.0",
-    "node-cron": "^3.0.3",
-    "@anthropic-ai/sdk": "^0.9.0",
-    "dotenv": "^16.0.0"
-  }
+const https = require("https");
+const { parse } = require("url");
+
+const SEARCH_KEYWORDS = ["焼肉", "ラーメン", "喫茶店", "居酒屋", "定食"];
+const AREAS = ["横浜", "川崎", "渋谷", "新宿", "池袋"];
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+function fetchUrl(urlStr) {
+  return new Promise((resolve) => {
+    const opts = parse(urlStr);
+    opts.headers = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    };
+    opts.timeout = 10000;
+
+    https.get(opts, (res) => {
+      let body = "";
+      res.on("data", chunk => body += chunk);
+      res.on("end", () => resolve(body));
+    }).on("error", () => resolve(""));
+  });
+}
+
+function parseShops(html, keyword, area) {
+  const results = [];
+  const shopPattern = /class="shopName[^"]*"[^>]*>([^<]+)</g;
+  const adrPattern = /class="adr[^"]*"[^>]*>([^<]+)</g;
+
+  let match;
+  const names = [];
+  while ((match = shopPattern.exec(html)) !== null) {
+    names.push(match[1].trim());
+    if (names.length >= 5) break;
+  }
+
+  for (const name of names) {
+    if (name) {
+      results.push({
+        name,
+        address: area,
+        phone: "不明",
+        category: keyword,
+        area,
+        source: "hotpepper",
+        hasWebsite: false
+      });
+    }
+  }
+
+  return results;
+}
+
+async function runHotpepperScraper() {
+  const allResults = [];
+
+  for (const keyword of SEARCH_KEYWORDS.slice(0, 3)) {
+    for (const area of AREAS.slice(0, 2)) {
+      console.log(`検索中: ${keyword} × ${area}`);
+      try {
+        const url = `https://www.hotpepper.jp/SA${encodeURIComponent(area)}/genre/${encodeURIComponent(keyword)}/`;
+        const html = await fetchUrl(url);
+        const results = parseShops(html, keyword, area);
+        allResults.push(...results);
+        console.log(`  → ${results.length}件取得`);
+      } catch (e) {
+        console.log(`Error: ${e.message}`);
+      }
+      await sleep(3000);
+    }
+  }
+
+  return allResults;
+}
+
+module.exports = { runHotpepperScraper };
