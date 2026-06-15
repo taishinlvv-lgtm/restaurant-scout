@@ -1,76 +1,71 @@
-const axios = require("axios");
-const cheerio = require("cheerio");
+const https = require("https");
 
-const SEARCH_KEYWORDS = [
-  "焼肉", "ラーメン", "喫茶店", "居酒屋", "定食", "寿司", "うどん", "そば"
-];
+const SEARCH_KEYWORDS = ["焼肉", "ラーメン", "喫茶店", "居酒屋", "定食"];
+const AREAS = ["横浜", "川崎", "渋谷", "新宿", "池袋"];
 
-const AREAS = [
-  "横浜", "川崎", "渋谷", "新宿", "池袋", "品川", "目黒", "世田谷"
-];
-
-async function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function scrapeHotpepper(keyword, area) {
+function fetchUrl(urlStr) {
+  return new Promise((resolve) => {
+    try {
+      const u = new URL(urlStr);
+      const options = {
+        hostname: u.hostname,
+        path: u.pathname + u.search,
+        method: "GET",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        },
+        timeout: 10000
+      };
+      const req = https.request(options, (res) => {
+        let body = "";
+        res.on("data", (chunk) => (body += chunk));
+        res.on("end", () => resolve(body));
+      });
+      req.on("error", () => resolve(""));
+      req.on("timeout", () => { req.destroy(); resolve(""); });
+      req.end();
+    } catch (e) {
+      resolve("");
+    }
+  });
+}
+
+function parseShops(html, keyword, area) {
   const results = [];
-  const url = `https://www.hotpepper.jp/SA${encodeURIComponent(area)}/genre/${encodeURIComponent(keyword)}/`;
-
-  try {
-    const res = await axios.get(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-      },
-      timeout: 10000
-    });
-
-    const $ = cheerio.load(res.data);
-
-    $(".shopListCont").each((i, el) => {
-      if (i >= 5) return false;
-
-      const name = $(el).find(".shopName").text().trim();
-      const address = $(el).find(".adr").text().trim();
-      const phone = $(el).find(".tel").text().trim();
-      const hasWebsite = $(el).find("a[href*='http']").filter((_, a) => {
-        const href = $(a).attr("href") || "";
-        return !href.includes("hotpepper") && !href.includes("line.me");
-      }).length > 0;
-
-      if (name && !hasWebsite) {
-        results.push({
-          name,
-          address: address || area,
-          phone: phone || "不明",
-          category: keyword,
-          area,
-          source: "hotpepper",
-          hasWebsite: false
-        });
-      }
-    });
-
-    await sleep(2000);
-  } catch (e) {
-    console.log(`Hotpepper error (${keyword}/${area}): ${e.message}`);
+  const shopPattern = /class="shopName[^"]*"[^>]*>\s*(?:<a[^>]*>)?\s*([^<]+)</g;
+  const names = [];
+  let match;
+  while ((match = shopPattern.exec(html)) !== null) {
+    const name = match[1].trim();
+    if (name && !names.includes(name)) names.push(name);
+    if (names.length >= 5) break;
   }
-
+  for (const name of names) {
+    results.push({
+      name, address: area, phone: "不明",
+      category: keyword, area, source: "hotpepper", hasWebsite: false
+    });
+  }
   return results;
 }
 
 async function runHotpepperScraper() {
   const allResults = [];
-
   for (const keyword of SEARCH_KEYWORDS.slice(0, 3)) {
     for (const area of AREAS.slice(0, 2)) {
       console.log(`検索中: ${keyword} × ${area}`);
-      const results = await scrapeHotpepper(keyword, area);
+      const url = `https://www.hotpepper.jp/SA${encodeURIComponent(area)}/genre/${encodeURIComponent(keyword)}/`;
+      const html = await fetchUrl(url);
+      const results = parseShops(html, keyword, area);
       allResults.push(...results);
+      console.log(`  → ${results.length}件取得`);
       await sleep(3000);
     }
   }
-
   return allResults;
 }
 
