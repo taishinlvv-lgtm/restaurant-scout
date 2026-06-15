@@ -1,5 +1,3 @@
-require("dotenv").config();
-const cron = require("node-cron");
 const { runHotpepperScraper } = require("./scrapers/hotpepper");
 const { importCSV } = require("./scrapers/csvImporter");
 const { enrichAll } = require("./enricher/claudeEnricher");
@@ -13,7 +11,7 @@ async function runScout() {
   try {
     console.log("\nホットペッパー検索中...");
     const hotpepperResults = await runHotpepperScraper();
-    console.log(`  → ${hotpepperResults.length}件取得`);
+    console.log(`  合計 → ${hotpepperResults.length}件取得`);
 
     console.log("\nCSV取込中...");
     const csvResults = importCSV();
@@ -33,19 +31,10 @@ async function runScout() {
     await writeToSheets(enriched);
 
     console.log(`\n完了！合計${enriched.length}件処理しました`);
-
   } catch (e) {
     console.error(`エラー: ${e.message}`);
+    process.exit(1);
   }
 }
 
-if (process.argv.includes("--test")) {
-  console.log("テストモードで実行");
-  runScout();
-} else {
-  console.log("スケジューラー起動 - 毎日AM9:00 JSTに実行");
-  cron.schedule("0 0 * * *", () => {
-    runScout();
-  });
-  runScout();
-}
+runScout();
