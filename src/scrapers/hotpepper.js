@@ -1,71 +1,83 @@
 const https = require("https");
 
-const SEARCH_KEYWORDS = ["焼肉", "ラーメン", "喫茶店", "居酒屋", "定食"];
-const AREAS = ["横浜", "川崎", "渋谷", "新宿", "池袋"];
+const API_KEY = process.env.HOTPEPPER_API_KEY;
+
+// 検索する大エリアコード（関東中心）
+// Z011=東京, Z014=神奈川
+const AREAS = ["Z011", "Z014"];
+
+// ジャンルコード G004=居酒屋 G007=焼肉・ホルモン G013=ラーメン G014=カフェ・喫茶店 G008=和食
+const GENRES = ["G007", "G013", "G014"];
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function fetchUrl(urlStr) {
+function fetchApi(urlStr) {
   return new Promise((resolve) => {
-    try {
-      const u = new URL(urlStr);
-      const options = {
-        hostname: u.hostname,
-        path: u.pathname + u.search,
-        method: "GET",
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-        },
-        timeout: 10000
-      };
-      const req = https.request(options, (res) => {
-        let body = "";
-        res.on("data", (chunk) => (body += chunk));
-        res.on("end", () => resolve(body));
-      });
-      req.on("error", () => resolve(""));
-      req.on("timeout", () => { req.destroy(); resolve(""); });
-      req.end();
-    } catch (e) {
+    https.get(urlStr, (res) => {
+      let body = "";
+      res.on("data", (chunk) => (body += chunk));
+      res.on("end", () => resolve(body));
+    }).on("error", (e) => {
+      console.log(`API error: ${e.message}`);
       resolve("");
-    }
+    });
   });
 }
 
-function parseShops(html, keyword, area) {
+async function searchByGenreArea(genre, area) {
   const results = [];
-  const shopPattern = /class="shopName[^"]*"[^>]*>\s*(?:<a[^>]*>)?\s*([^<]+)</g;
-  const names = [];
-  let match;
-  while ((match = shopPattern.exec(html)) !== null) {
-    const name = match[1].trim();
-    if (name && !names.includes(name)) names.push(name);
-    if (names.length >= 5) break;
+  const url =
+    `https://webservice.recruit.co.jp/hotpepper/gourmet/v1/` +
+    `?key=${API_KEY}&large_area=${area}&genre=${genre}` +
+    `&count=20&format=json`;
+
+  const body = await fetchApi(url);
+  if (!body) return results;
+
+  try {
+    const json = JSON.parse(body);
+    const shops = (json.results && json.results.shop) || [];
+    for (const shop of shops) {
+      // 公式サイト(urls.pc)はホットペッパーのページなので、
+      // 「自社サイトを持っていない店」の判定には使えない。
+      // ここでは全件を見込み客候補として取得する。
+      results.push({
+        name: shop.name,
+        area: shop.middle_area ? shop.middle_area.name : area,
+        phone: "不明", // APIは電話番号を返さないため後で手動確認
+        category: shop.genre ? shop.genre.name : "飲食店",
+        priority: "中",
+        address: shop.address || "",
+        salesPitch: "",
+      });
+    }
+  } catch (e) {
+    console.log(`JSON parse error: ${e.message}`);
   }
-  for (const name of names) {
-    results.push({
-      name, address: area, phone: "不明",
-      category: keyword, area, source: "hotpepper", hasWebsite: false
-    });
-  }
+
   return results;
 }
 
 async function runHotpepperScraper() {
+  if (!API_KEY) {
+    console.log("HOTPEPPER_API_KEY未設定 - スキップ");
+    return [];
+  }
+
   const allResults = [];
-  for (const keyword of SEARCH_KEYWORDS.slice(0, 3)) {
-    for (const area of AREAS.slice(0, 2)) {
-      console.log(`検索中: ${keyword} × ${area}`);
-      const url = `https://www.hotpepper.jp/SA${encodeURIComponent(area)}/genre/${encodeURIComponent(keyword)}/`;
-      const html = await fetchUrl(url);
-      const results = parseShops(html, keyword, area);
+  for (const genre of GENRES) {
+    for (const area of AREAS) {
+      console.log(`検索中: ジャンル${genre} × エリア${area}`);
+      const results = await searchByGenreArea(genre, area);
       allResults.push(...results);
       console.log(`  → ${results.length}件取得`);
-      await sleep(3000);
+      await sleep(1000);
     }
   }
+
+  console.log(`ホットペッパー合計: ${allResults.length}件`);
   return allResults;
 }
 
