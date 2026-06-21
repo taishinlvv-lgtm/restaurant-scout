@@ -1,20 +1,40 @@
-name: Restaurant Scout
+const { runHotpepperScraper } = require("./scrapers/hotpepper");
+const { importCSV } = require("./scrapers/csvImporter");
+const { enrichAll } = require("./enricher/claudeEnricher");
+const { writeToSheets } = require("./output/googleSheets");
 
-on:
-  schedule:
-    - cron: '0 0 * * *'
-  workflow_dispatch:
+async function runScout() {
+  console.log("====================================");
+  console.log(`開始: ${new Date().toLocaleString("ja-JP")}`);
+  console.log("====================================");
 
-jobs:
-  scout:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-      - run: node src/index.js
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
-          HOTPEPPER_API_KEY: ${{ secrets.HOTPEPPER_API_KEY }}
+  try {
+    console.log("\nホットペッパー検索中...");
+    const hotpepperResults = await runHotpepperScraper();
+    console.log(`  合計 → ${hotpepperResults.length}件取得`);
+
+    console.log("\nCSV取込中...");
+    const csvResults = importCSV();
+    console.log(`  → ${csvResults.length}件取得`);
+
+    const allRestaurants = [...hotpepperResults, ...csvResults];
+
+    if (allRestaurants.length === 0) {
+      console.log("\n新規店舗なし - 終了");
+      return;
+    }
+
+    console.log(`\nClaude APIで情報生成中（${allRestaurants.length}件）...`);
+    const enriched = await enrichAll(allRestaurants);
+
+    console.log("\nGoogle Sheetsに書き込み中...");
+    await writeToSheets(enriched);
+
+    console.log(`\n完了！合計${enriched.length}件処理しました`);
+  } catch (e) {
+    console.error(`エラー: ${e.message}`);
+    process.exit(1);
+  }
+}
+
+runScout();
