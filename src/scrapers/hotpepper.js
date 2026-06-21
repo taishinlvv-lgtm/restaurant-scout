@@ -2,11 +2,7 @@ const https = require("https");
 
 const API_KEY = process.env.HOTPEPPER_API_KEY;
 
-// 検索する大エリアコード（関東中心）
-// Z011=東京, Z014=神奈川
 const AREAS = ["Z011", "Z014"];
-
-// ジャンルコード G004=居酒屋 G007=焼肉・ホルモン G013=ラーメン G014=カフェ・喫茶店 G008=和食
 const GENRES = ["G007", "G013", "G014"];
 
 function sleep(ms) {
@@ -40,17 +36,16 @@ async function searchByGenreArea(genre, area) {
     const json = JSON.parse(body);
     const shops = (json.results && json.results.shop) || [];
     for (const shop of shops) {
-      // 公式サイト(urls.pc)はホットペッパーのページなので、
-      // 「自社サイトを持っていない店」の判定には使えない。
-      // ここでは全件を見込み客候補として取得する。
       results.push({
         name: shop.name,
         area: shop.middle_area ? shop.middle_area.name : area,
-        phone: "不明", // APIは電話番号を返さないため後で手動確認
+        phone: "不明",
         category: shop.genre ? shop.genre.name : "飲食店",
         priority: "中",
         address: shop.address || "",
         salesPitch: "",
+        // 店舗詳細ページURL（営業時に電話番号・地図を確認できる）
+        shopUrl: (shop.urls && shop.urls.pc) || "",
       });
     }
   } catch (e) {
