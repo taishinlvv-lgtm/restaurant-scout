@@ -17,7 +17,16 @@ async function runScout() {
     const csvResults = importCSV();
     console.log(`  → ${csvResults.length}件取得`);
 
-    const allRestaurants = [...hotpepperResults, ...csvResults];
+    let allRestaurants = [...hotpepperResults, ...csvResults];
+
+    // === テスト用ダミーデータ（動作確認後に削除）===
+    if (allRestaurants.length === 0) {
+      console.log("\n[テスト] ダミーデータで書き込み確認");
+      allRestaurants = [
+        { name: "テスト食堂", area: "横浜", phone: "045-000-0000", category: "定食", priority: "高", salesPitch: "テスト用の営業文です" }
+      ];
+    }
+    // === ここまでテスト用 ===
 
     if (allRestaurants.length === 0) {
       console.log("\n新規店舗なし - 終了");
