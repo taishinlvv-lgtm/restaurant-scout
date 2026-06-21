@@ -13,8 +13,8 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: '18'
-      - run: npm install
       - run: node src/index.js
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+          HOTPEPPER_API_KEY: ${{ secrets.HOTPEPPER_API_KEY }}
